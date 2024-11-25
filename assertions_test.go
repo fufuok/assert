@@ -20,9 +20,22 @@ func TestAssertTrue(t *testing.T) {
 func TestAssertEqual(t *testing.T) {
 	t.Parallel()
 	Equal(nil, []string{}, []string{})
+	Equal(t, []byte{}, []byte{})
+	Equal(t, []byte{0, 1, 2}, []byte{0, 1, 2})
+	Equal(t, map[int]int{1: 2}, map[int]int{1: 2})
 	Equal(t, []string{}, []string{})
+	Equal(t, &struct{}{}, &struct{}{})
+
+	var bs []byte
+	NotEqual(t, bs, []byte{})
+	NotEqual(t, []byte(nil), []byte{})
+	NotEqual(t, []byte{0, 2, 1}, []byte{0, 1, 2})
+	NotEqual(t, map[int]int{2: 2}, map[int]int{1: 2})
 	NotEqual(t, []string{"f"}, []string{}, "desc: %s", "abc")
 	NotEqual(t, nil, []string{})
+	NotEqual(t, func() {}, func() {})
+	NotEqual(t, 'f', "f")
+	NotEqual(t, 10, uint(10))
 }
 
 func TestAssertPanics(t *testing.T) {
@@ -77,7 +90,7 @@ func TestIsNil(t *testing.T) {
 
 	var eface1 error
 	Nil(t, eface1)
-	var eface2 = new(error)
+	eface2 := new(error)
 	NotNil(t, eface2)
 	var iface3 interface{} = eface1
 	Nil(t, iface3)
@@ -87,17 +100,18 @@ func TestIsNil(t *testing.T) {
 
 	var iface4 interface{} = ptr
 	Nil(t, iface4)
+	// Equal(t, false, iface4 == nil) // go1.16.4
 
 	var fun func(int) error
 	Nil(t, fun)
 
-	var struct0 = new(bytes.Buffer)
+	struct0 := new(bytes.Buffer)
 	NotNil(t, struct0)
 	var struct1 *bytes.Buffer
 	Nil(t, struct1)
 	var struct2 bytes.Buffer
 	NotNil(t, struct2)
-	var struct3 = &bytes.Buffer{}
+	struct3 := &bytes.Buffer{}
 	NotNil(t, struct3)
 	var struct4 *struct{}
 	Nil(t, struct4)
@@ -113,6 +127,9 @@ func TestIsNil(t *testing.T) {
 
 	var n unsafe.Pointer = nil
 	Nil(t, n)
+
+	// var nil1 = (*int)(unsafe.Pointer(uintptr(0x0)))
+	// Equal(t, true, IsNil(nil1))
 }
 
 // Ref: stretchr/testify
@@ -186,4 +203,9 @@ func TestEmpty(t *testing.T) {
 	NotEmpty(t, TString("abc"), "non-empty aliased string is empty")
 	NotEmpty(t, xP, "ptr to non-nil value is not empty")
 	NotEmpty(t, [1]int{42}, "array is not state")
+}
+
+func TestAssertContains(t *testing.T) {
+	t.Parallel()
+	Contains(t, "ab", "ab", "abc", "aabc", "babca")
 }

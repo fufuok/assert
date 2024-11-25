@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"text/tabwriter"
 )
@@ -77,6 +78,18 @@ func Empty(tb testing.TB, value interface{}, msgAndArgs ...interface{}) {
 	assertLog(tb, nil, value, "Empty", result, msgAndArgs...)
 }
 
+func Contains(tb testing.TB, value string, msgAndArgs ...string) {
+	if tb != nil {
+		tb.Helper()
+	}
+	for _, s := range msgAndArgs {
+		if ok := strings.Contains(s, value); !ok {
+			result := fmt.Sprintf("%s does not contain %s", s, value)
+			assertLog(tb, nil, nil, "Contains", result, msgAndArgs)
+		}
+	}
+}
+
 func NotEqual(tb testing.TB, expected, actual interface{}, msgAndArgs ...interface{}) {
 	if tb != nil {
 		tb.Helper()
@@ -98,27 +111,6 @@ func Equal(tb testing.TB, expected, actual interface{}, msgAndArgs ...interface{
 		return
 	}
 	assertLog(tb, expected, actual, "Equal", "", msgAndArgs...)
-}
-
-// DeepEqual Ref: stretchr/testify
-func DeepEqual(expected, actual interface{}) bool {
-	if expected == nil || actual == nil {
-		return expected == actual
-	}
-
-	exp, ok := expected.([]byte)
-	if !ok {
-		return reflect.DeepEqual(expected, actual)
-	}
-
-	act, ok := actual.([]byte)
-	if !ok {
-		return false
-	}
-	if exp == nil || act == nil {
-		return exp == nil && act == nil
-	}
-	return bytes.Equal(exp, act)
 }
 
 func assertLog(tb testing.TB, a, b interface{}, testType, result string, msgAndArgs ...interface{}) {
@@ -166,6 +158,25 @@ func assertLog(tb testing.TB, a, b interface{}, testType, result string, msgAndA
 	}
 }
 
+// Ref: stretchr/testify
+func messageFromMsgAndArgs(msgAndArgs ...interface{}) string {
+	if len(msgAndArgs) == 0 || msgAndArgs == nil {
+		return ""
+	}
+	if len(msgAndArgs) == 1 {
+		msg := msgAndArgs[0]
+		if msgAsStr, ok := msg.(string); ok {
+			return runeSubString(msgAsStr, 300, "..")
+		}
+		return runeSubString(fmt.Sprintf("%+v", msg), 300, "..")
+	}
+	if len(msgAndArgs) > 1 {
+		return runeSubString(fmt.Sprintf(msgAndArgs[0].(string), msgAndArgs[1:]...), 300, "..")
+	}
+	return ""
+}
+
+// Panics 断言 panic
 func Panics(t *testing.T, title string, f func()) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -179,7 +190,46 @@ func Panics(t *testing.T, title string, f func()) {
 	f()
 }
 
-// IsNil Ref: stretchr/testify
+// DeepEqual Ref: stretchr/testify
+func DeepEqual(expected, actual interface{}) bool {
+	if expected == nil || actual == nil {
+		return expected == actual
+	}
+
+	exp, ok := expected.([]byte)
+	if !ok {
+		return reflect.DeepEqual(expected, actual)
+	}
+
+	act, ok := actual.([]byte)
+	if !ok {
+		return false
+	}
+	if exp == nil || act == nil {
+		return exp == nil && act == nil
+	}
+	return bytes.Equal(exp, act)
+}
+
+// IsNil 判断对象(pointer, channel, func, interface, map, slice)是否为 nil
+// nil 是一个 Type 类型的变量, Type 类型是基于 int 的类型
+// var 若变量本身是指针, 占用 8 字节, 指向类型内部结构体并置 0, 仅定义了变量本身, 此时为 nil
+//
+//	指针是非复合类型, 赋值 nil 时, 将 8 字节置 0, 即没有指向任何值的指针 0x0
+//	map, channel: var 时仅定义了指针, 需要 make 初始化内部结构后才能使用, make 后非 nil
+//
+// var 若变量非指针, 如 struct, int, 非 nil
+// slice:
+//
+//	type slice struct, 占用 24 字节, 1 指针(array unsafe.Pointer) 2 个整型字段(len, cap int)
+//	var 定义后即可使用, 置 0 并分配, 此时 array 指针为 0 即没有实际数据时为 nil
+//
+// interface:
+//
+//	type iface struct(interface 类型), type eface struct(空接口), 占用 16 字节
+//	判断 data 指针为 0 即为 nil, 初始化后即非 0
+//
+// Ref: stretchr/testify
 func IsNil(o interface{}) bool {
 	if o == nil {
 		return true
@@ -191,11 +241,24 @@ func IsNil(o interface{}) bool {
 		[]reflect.Kind{
 			reflect.Chan, reflect.Func,
 			reflect.Interface, reflect.Map,
-			reflect.Ptr, reflect.Slice, reflect.UnsafePointer},
+			reflect.Ptr, reflect.Slice, reflect.UnsafePointer,
+		},
 		kind)
 
 	if isNilableKind && value.IsNil() {
 		return true
+	}
+
+	return false
+}
+
+// containsKind checks if a specified kind in the slice of kinds.
+// Ref: stretchr/testify
+func containsKind(kinds []reflect.Kind, kind reflect.Kind) bool {
+	for i := 0; i < len(kinds); i++ {
+		if kind == kinds[i] {
+			return true
+		}
 	}
 
 	return false
@@ -227,34 +290,4 @@ func IsEmpty(o interface{}) bool {
 		zero := reflect.Zero(v.Type())
 		return reflect.DeepEqual(o, zero.Interface())
 	}
-}
-
-// containsKind checks if a specified kind in the slice of kinds.
-// Ref: stretchr/testify
-func containsKind(kinds []reflect.Kind, kind reflect.Kind) bool {
-	for i := 0; i < len(kinds); i++ {
-		if kind == kinds[i] {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Ref: stretchr/testify
-func messageFromMsgAndArgs(msgAndArgs ...interface{}) string {
-	if len(msgAndArgs) == 0 || msgAndArgs == nil {
-		return ""
-	}
-	if len(msgAndArgs) == 1 {
-		msg := msgAndArgs[0]
-		if msgAsStr, ok := msg.(string); ok {
-			return msgAsStr
-		}
-		return fmt.Sprintf("%+v", msg)
-	}
-	if len(msgAndArgs) > 1 {
-		return fmt.Sprintf(msgAndArgs[0].(string), msgAndArgs[1:]...)
-	}
-	return ""
 }
